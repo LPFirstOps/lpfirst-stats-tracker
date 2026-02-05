@@ -283,20 +283,20 @@ async function hasDropdown(page, dropdownSelector) {
 }
 
 /**
- * Get current year
+ * Get current year in Central time
  * @returns {number}
  */
 function getCurrentYear() {
-  return new Date().getFullYear();
+  return parseInt(new Date().toLocaleString('en-US', { timeZone: 'America/Chicago', year: 'numeric' }));
 }
 
 /**
- * Format date as YYYY-MM-DD
+ * Format date as YYYY-MM-DD in Central time
  * @param {Date} date
  * @returns {string}
  */
 function formatDate(date = new Date()) {
-  return date.toISOString().split('T')[0];
+  return date.toLocaleDateString('en-CA', { timeZone: 'America/Chicago' });
 }
 
 /**
