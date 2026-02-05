@@ -400,10 +400,11 @@ async function runScraper({ initial = false, daily = false }) {
   // Load existing stats
   const stats = loadStats();
 
-  // Launch browser
+  // Launch browser (headless by default, set HEADLESS=false in .env to show browser)
+  const headless = process.env.HEADLESS !== 'false';
   const browser = await chromium.launch({
-    headless: false, // Set to true for production
-    slowMo: 50
+    headless,
+    slowMo: headless ? 0 : 50
   });
 
   const context = await browser.newContext({
