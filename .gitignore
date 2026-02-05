@@ -17,5 +17,3 @@ index.html.bak
 npm-debug.log*
 /.playwright-mcp
 
-# Screenshots
-*.png
