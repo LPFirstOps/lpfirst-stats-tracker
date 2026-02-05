@@ -1,0 +1,27 @@
+{
+  "name": "lpfirst-stats-tracker",
+  "version": "1.0.0",
+  "description": "Scraper and dashboard for ContractorConnection stats",
+  "main": "scraper/index.js",
+  "scripts": {
+    "scrape:initial": "node scraper/index.js --initial",
+    "scrape:daily": "node scraper/index.js --daily",
+    "decrypt": "node scripts/decrypt.js",
+    "encrypt": "node scripts/encrypt.js",
+    "update": "npm run decrypt && npm run scrape:daily && npm run encrypt",
+    "update:initial": "npm run scrape:initial && npm run encrypt",
+    "serve": "npx serve ."
+  },
+  "keywords": [],
+  "author": "Kevin Colten",
+  "license": "UNLICENSED",
+  "type": "commonjs",
+  "dependencies": {
+    "dotenv": "^17.2.3",
+    "otplib": "^13.2.1",
+    "playwright": "^1.58.1"
+  },
+  "devDependencies": {
+    "staticrypt": "^3.5.4"
+  }
+}

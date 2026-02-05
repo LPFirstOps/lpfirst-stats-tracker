@@ -1,0 +1,21 @@
+# Dependencies
+node_modules/
+
+# Environment variables
+.env
+
+# Original data file (never commit - use encrypted version)
+data/stats.json
+
+# Original index.html backup (created during encryption)
+index.html.bak
+
+# OS files
+.DS_Store
+
+# Debug logs
+npm-debug.log*
+/.playwright-mcp
+
+# Screenshots
+*.png
