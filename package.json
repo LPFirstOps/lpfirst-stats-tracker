@@ -8,7 +8,8 @@
     "scrape:daily": "node scraper/index.js --daily",
     "decrypt": "node scripts/decrypt.js",
     "encrypt": "node scripts/encrypt.js",
-    "update": "npm run decrypt && npm run scrape:daily && npm run encrypt",
+    "encrypt:data": "node scripts/encrypt-data.js",
+    "update": "npm run decrypt && npm run scrape:daily && npm run encrypt:data",
     "update:initial": "npm run scrape:initial && npm run encrypt",
     "serve": "npx serve ."
   },

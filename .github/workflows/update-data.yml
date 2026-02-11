@@ -9,6 +9,7 @@ on:
 
 permissions:
   contents: write
+  actions: write
 
 jobs:
   update:
@@ -44,13 +45,22 @@ jobs:
         run: npm run update
 
       - name: Commit and push changes
+        id: commit
         run: |
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
           git config --local user.name "github-actions[bot]"
           git add -A
           if git diff --staged --quiet; then
             echo "No changes to commit"
+            echo "pushed=false" >> $GITHUB_OUTPUT
           else
             git commit -m "Update dashboard data $(date -u '+%Y-%m-%d %H:%M UTC')"
             git push
+            echo "pushed=true" >> $GITHUB_OUTPUT
           fi
+
+      - name: Trigger Pages deployment
+        if: steps.commit.outputs.pushed == 'true'
+        run: gh workflow run static.yml
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
