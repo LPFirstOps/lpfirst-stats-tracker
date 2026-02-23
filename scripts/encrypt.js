@@ -216,17 +216,26 @@ async function main() {
         const decryptedJson = await window.cryptoEngine.decrypt(encryptedData, hashedPassword);
         statsData = JSON.parse(decryptedJson);
 
-        if (!statsData.years || Object.keys(statsData.years).length === 0) {
+        const hasCCData = statsData.years && Object.keys(statsData.years).length > 0;
+        const hasSedgwickData = statsData.sedgwick?.dailySnapshots?.length > 0;
+
+        if (!hasCCData && !hasSedgwickData) {
           showNoData(true);
           return;
         }
 
         showNoData(false);
-        populatePomTypeFilter();
-        updateSummaryCards();
-        createAllCharts();
-        updateAllTables();
-        updateDataTable();
+
+        if (hasCCData) {
+          populatePomTypeFilter();
+          updateSummaryCards();
+          createAllCharts();
+          updateAllTables();
+          updateDataTable();
+        } else {
+          // No CC data but have Sedgwick - auto-switch to Sedgwick view
+          switchSource('sedgwick');
+        }
 
         if (statsData.lastUpdated) {
           document.getElementById('lastUpdated').textContent =
@@ -284,6 +293,12 @@ async function main() {
     encryptedHtml = encryptedHtml.replace(
       'if (isRememberEnabled && isRememberChecked) {',
       'if (isRememberEnabled) { // Always store password for data decryption'
+    );
+
+    // Pre-check the "Remember me" checkbox
+    encryptedHtml = encryptedHtml.replace(
+      '<input id="staticrypt-remember" type="checkbox" name="remember" />',
+      '<input id="staticrypt-remember" type="checkbox" name="remember" checked />'
     );
 
     fs.writeFileSync(INDEX_PATH, encryptedHtml);

@@ -9,7 +9,9 @@
     "decrypt": "node scripts/decrypt.js",
     "encrypt": "node scripts/encrypt.js",
     "encrypt:data": "node scripts/encrypt-data.js",
+    "scrape:sedgwick": "node scraper/sedgwick.js",
     "update": "npm run decrypt && npm run scrape:daily && npm run encrypt:data",
+    "update:sedgwick": "npm run decrypt && npm run scrape:sedgwick && npm run encrypt:data",
     "update:initial": "npm run scrape:initial && npm run encrypt",
     "serve": "npx serve ."
   },

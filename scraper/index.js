@@ -12,6 +12,7 @@ const {
   getPreviousSnapshot,
   calculateSummaryTotals
 } = require('./utils');
+const { scrapeSedgwick, storeSedgwickSnapshot } = require('./sedgwick');
 
 // Tab names to iterate through
 const TABS = ['ASSIGNMENTS', 'AVG TIP', 'POMS', 'REINSPECTIONS', 'SURVEYS', 'QA FEEDBACK'];
@@ -375,17 +376,12 @@ async function selectAssignmentType(page, type) {
  * @param {boolean} options.initial - Run initial full scrape (all years)
  * @param {boolean} options.daily - Run daily update (current year only)
  */
-async function runScraper({ initial = false, daily = false }) {
-  // Validate environment variables
+async function scrapeContractorConnection(browser, stats, { initial, daily }) {
   const { CC_USERNAME, CC_PASSWORD, CC_2FA_SECRET, CC_BASE_URL } = process.env;
 
   if (!CC_USERNAME || !CC_PASSWORD || !CC_2FA_SECRET) {
-    console.error('Missing required environment variables. Please set:');
-    console.error('  - CC_USERNAME');
-    console.error('  - CC_PASSWORD');
-    console.error('  - CC_2FA_SECRET');
-    console.error('Copy .env.example to .env and fill in your credentials.');
-    process.exit(1);
+    console.log('ContractorConnection credentials not configured, skipping CC scrape...');
+    return;
   }
 
   const baseUrl = CC_BASE_URL || 'https://www.contractorconnection.com/ContractorDashboard/Summary';
@@ -393,19 +389,8 @@ async function runScraper({ initial = false, daily = false }) {
   console.log('Starting ContractorConnection scraper...');
   console.log(`Mode: ${initial ? 'Initial (all years)' : 'Daily update'}`);
 
-  // Determine years to scrape
   const yearsToScrape = initial ? INITIAL_YEARS : [getCurrentYear()];
   console.log(`Years to scrape: ${yearsToScrape.join(', ')}`);
-
-  // Load existing stats
-  const stats = loadStats();
-
-  // Launch browser (headless by default, set HEADLESS=false in .env to show browser)
-  const headless = process.env.HEADLESS !== 'false';
-  const browser = await chromium.launch({
-    headless,
-    slowMo: headless ? 0 : 50
-  });
 
   const context = await browser.newContext({
     viewport: { width: 1280, height: 900 },
@@ -415,7 +400,6 @@ async function runScraper({ initial = false, daily = false }) {
   const page = await context.newPage();
 
   try {
-    // Login
     const loginSuccess = await login(page, {
       username: CC_USERNAME,
       password: CC_PASSWORD,
@@ -424,31 +408,24 @@ async function runScraper({ initial = false, daily = false }) {
     });
 
     if (!loginSuccess) {
-      console.error('Login failed, aborting scrape');
-      await browser.close();
-      process.exit(1);
+      console.error('CC login failed, skipping CC scrape');
+      return;
     }
 
-    // Wait for dashboard to fully load
     await page.waitForTimeout(3000);
 
-    // Scrape each year
     for (const year of yearsToScrape) {
       console.log(`\n========== Scraping year: ${year} ==========`);
 
-      // Reload the page to reset state
       await page.goto(baseUrl);
       await page.waitForLoadState('networkidle');
       await page.waitForTimeout(2000);
 
-      // Select year
       await selectYear(page, year);
       await page.waitForTimeout(3000);
 
-      // Initialize year data structure
       stats.years[year] = {};
 
-      // Click on each tab and extract data
       for (const tabName of TABS) {
         console.log(`\n--- Tab: ${tabName} ---`);
 
@@ -458,18 +435,15 @@ async function runScraper({ initial = false, daily = false }) {
           continue;
         }
 
-        // Wait for table to load
         await page.waitForTimeout(2000);
 
         const tabKey = tabName.toLowerCase().replace(/\s+/g, '');
         stats.years[year][tabKey] = { byType: {} };
 
-        // Check if this tab has a type dropdown (Assignment Type or POMS Score Type)
         const hasDropdown = await checkForTypeDropdown(page);
         console.log(`  Has type dropdown: ${hasDropdown}`);
 
         if (hasDropdown) {
-          // Iterate through each assignment type
           for (const assignmentType of ASSIGNMENT_TYPES) {
             console.log(`    Processing type: ${assignmentType}`);
             const selected = await selectAssignmentType(page, assignmentType);
@@ -486,34 +460,28 @@ async function runScraper({ initial = false, daily = false }) {
               }
             }
           }
-          // Reset to ALL
           await selectAssignmentType(page, 'ALL');
         } else {
-          // No dropdown - just extract the single table
           const tableData = await extractTableData(page, tabKey);
           stats.years[year][tabKey].data = tableData;
           console.log(`  Extracted ${Object.keys(tableData).length} metrics`);
         }
       }
 
-      // Save after each year (in case of interruption)
       saveStats(stats);
       console.log(`\nYear ${year} data saved.`);
     }
 
-    // If daily mode, also add to daily snapshots with diff calculation
     if (daily) {
       const currentYear = getCurrentYear();
       const todayData = stats.years[currentYear];
       const todaySummary = calculateSummaryTotals(todayData);
 
-      // Get previous snapshot for diff calculation
       const previousSnapshot = getPreviousSnapshot(stats.dailySnapshots);
       let diff = null;
-      let previousSummary = null;
 
       if (previousSnapshot) {
-        previousSummary = calculateSummaryTotals(previousSnapshot.data);
+        const previousSummary = calculateSummaryTotals(previousSnapshot.data);
         diff = calculateDiff(todaySummary, previousSummary);
         console.log(`\nCalculating diff from ${previousSnapshot.date}...`);
         if (diff) {
@@ -536,7 +504,6 @@ async function runScraper({ initial = false, daily = false }) {
         previousDate: previousSnapshot?.date || null
       };
 
-      // Check if we already have a snapshot for today (update it instead of adding)
       const todayIndex = stats.dailySnapshots.findIndex(s => s.date === formatDate());
       if (todayIndex >= 0) {
         stats.dailySnapshots[todayIndex] = snapshot;
@@ -546,7 +513,6 @@ async function runScraper({ initial = false, daily = false }) {
         console.log(`\nDaily snapshot saved for ${formatDate()}`);
       }
 
-      // Keep last 365 days
       if (stats.dailySnapshots.length > 365) {
         stats.dailySnapshots = stats.dailySnapshots.slice(-365);
       }
@@ -554,8 +520,36 @@ async function runScraper({ initial = false, daily = false }) {
       saveStats(stats);
     }
 
-    console.log('\n========== Scraping complete! ==========');
+    console.log('\n========== CC scraping complete! ==========');
 
+  } catch (error) {
+    console.error('CC scraper error:', error);
+  } finally {
+    await context.close();
+  }
+}
+
+async function runScraper({ initial = false, daily = false }) {
+  const stats = loadStats();
+
+  const headless = process.env.HEADLESS !== 'false';
+  const browser = await chromium.launch({
+    headless,
+    slowMo: headless ? 0 : 50
+  });
+
+  try {
+    // Scrape ContractorConnection
+    await scrapeContractorConnection(browser, stats, { initial, daily });
+
+    // Scrape Sedgwick
+    const sedgwickData = await scrapeSedgwick(browser);
+    if (sedgwickData) {
+      storeSedgwickSnapshot(stats, sedgwickData);
+      saveStats(stats);
+    }
+
+    console.log('\n========== All scraping complete! ==========');
   } catch (error) {
     console.error('Scraper error:', error);
   } finally {

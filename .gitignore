@@ -17,3 +17,4 @@ index.html.bak
 npm-debug.log*
 /.playwright-mcp
 
+tmp/
