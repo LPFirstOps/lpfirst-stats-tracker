@@ -405,6 +405,34 @@ function calculateSummaryTotals(yearData) {
   return summary;
 }
 
+/**
+ * Run a standalone scraper with auto-decrypt, browser lifecycle, and save
+ * @param {string} name - Scraper name for logging
+ * @param {Function} runFn - async (browser, stats) => void
+ */
+async function runStandalone(name, runFn) {
+  require('dotenv').config();
+  const { chromium } = require('playwright');
+  const { execSync } = require('child_process');
+
+  const encPath = path.join(__dirname, '..', 'data', 'stats.json.enc');
+  if (!fs.existsSync(DATA_FILE) && fs.existsSync(encPath)) {
+    console.log('stats.json not found, decrypting from stats.json.enc...');
+    execSync('node scripts/decrypt.js', { cwd: path.join(__dirname, '..'), stdio: 'inherit' });
+  }
+
+  const headless = process.env.HEADLESS !== 'false';
+  const browser = await chromium.launch({ headless, slowMo: headless ? 0 : 50 });
+
+  try {
+    const stats = loadStats();
+    await runFn(browser, stats);
+    saveStats(stats);
+  } finally {
+    await browser.close();
+  }
+}
+
 module.exports = {
   ASSIGNMENT_TYPES,
   INITIAL_YEARS,
@@ -422,5 +450,6 @@ module.exports = {
   formatDate,
   calculateDiff,
   getPreviousSnapshot,
-  calculateSummaryTotals
+  calculateSummaryTotals,
+  runStandalone
 };

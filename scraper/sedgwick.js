@@ -1,7 +1,4 @@
-require('dotenv').config();
 const {
-  loadStats,
-  saveStats,
   formatDate,
   calculateDiff,
   getPreviousSnapshot
@@ -323,27 +320,15 @@ module.exports = {
 
 // Allow standalone execution for testing
 if (require.main === module) {
-  const { chromium } = require('playwright');
-
-  (async () => {
-    const headless = process.env.HEADLESS !== 'false';
-    const browser = await chromium.launch({ headless, slowMo: headless ? 0 : 50 });
-
-    try {
-      const data = await scrapeSedgwick(browser);
-      if (data) {
-        console.log('\nScraped data:');
-        console.log(JSON.stringify(data, null, 2));
-
-        // Save to stats
-        const stats = loadStats();
-        storeSedgwickSnapshot(stats, data);
-        saveStats(stats);
-      } else {
-        console.log('No data scraped.');
-      }
-    } finally {
-      await browser.close();
+  const { runStandalone } = require('./utils');
+  runStandalone('Sedgwick', async (browser, stats) => {
+    const data = await scrapeSedgwick(browser);
+    if (data) {
+      console.log('\nScraped data:');
+      console.log(JSON.stringify(data, null, 2));
+      storeSedgwickSnapshot(stats, data);
+    } else {
+      console.log('No data scraped.');
     }
-  })();
+  });
 }

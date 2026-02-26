@@ -9,9 +9,13 @@
     "decrypt": "node scripts/decrypt.js",
     "encrypt": "node scripts/encrypt.js",
     "encrypt:data": "node scripts/encrypt-data.js",
+    "scrape:cc": "node scraper/cc.js",
     "scrape:sedgwick": "node scraper/sedgwick.js",
+    "scrape:alacrity": "node scraper/alacrity.js",
     "update": "npm run decrypt && npm run scrape:daily && npm run encrypt:data",
+    "update:cc": "npm run decrypt && npm run scrape:cc && npm run encrypt:data",
     "update:sedgwick": "npm run decrypt && npm run scrape:sedgwick && npm run encrypt:data",
+    "update:alacrity": "npm run decrypt && npm run scrape:alacrity && npm run encrypt:data",
     "update:initial": "npm run scrape:initial && npm run encrypt",
     "serve": "npx serve ."
   },

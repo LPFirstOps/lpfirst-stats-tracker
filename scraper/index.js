@@ -13,6 +13,7 @@ const {
   calculateSummaryTotals
 } = require('./utils');
 const { scrapeSedgwick, storeSedgwickSnapshot } = require('./sedgwick');
+const { scrapeAlacrity, storeAlacritySnapshot } = require('./alacrity');
 
 // Tab names to iterate through
 const TABS = ['ASSIGNMENTS', 'AVG TIP', 'POMS', 'REINSPECTIONS', 'SURVEYS', 'QA FEEDBACK'];
@@ -549,6 +550,13 @@ async function runScraper({ initial = false, daily = false }) {
       saveStats(stats);
     }
 
+    // Scrape Alacrity
+    const alacrityData = await scrapeAlacrity(browser);
+    if (alacrityData) {
+      storeAlacritySnapshot(stats, alacrityData);
+      saveStats(stats);
+    }
+
     console.log('\n========== All scraping complete! ==========');
   } catch (error) {
     console.error('Scraper error:', error);
@@ -557,17 +565,21 @@ async function runScraper({ initial = false, daily = false }) {
   }
 }
 
-// Parse command line arguments
-const args = process.argv.slice(2);
-const initial = args.includes('--initial');
-const daily = args.includes('--daily');
+module.exports = { scrapeContractorConnection };
 
-if (!initial && !daily) {
-  console.log('Usage:');
-  console.log('  npm run scrape:initial  - Scrape all years (2020-2025)');
-  console.log('  npm run scrape:daily    - Scrape current year only');
-  console.log('\nDefaulting to daily mode...');
-  runScraper({ daily: true });
-} else {
-  runScraper({ initial, daily });
+// Parse command line arguments when run directly
+if (require.main === module) {
+  const args = process.argv.slice(2);
+  const initial = args.includes('--initial');
+  const daily = args.includes('--daily');
+
+  if (!initial && !daily) {
+    console.log('Usage:');
+    console.log('  npm run scrape:initial  - Scrape all years (2020-2025)');
+    console.log('  npm run scrape:daily    - Scrape current year only');
+    console.log('\nDefaulting to daily mode...');
+    runScraper({ daily: true });
+  } else {
+    runScraper({ initial, daily });
+  }
 }

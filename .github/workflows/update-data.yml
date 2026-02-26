@@ -41,6 +41,10 @@ jobs:
           SEDGWICK_URL=${{ secrets.SEDGWICK_URL }}
           SEDGWICK_USERNAME=${{ secrets.SEDGWICK_USERNAME }}
           SEDGWICK_PASSWORD=${{ secrets.SEDGWICK_PASSWORD }}
+          ALACRITY_URL=${{ secrets.ALACRITY_URL }}
+          ALACRITY_STARTS_WITH=${{ secrets.ALACRITY_STARTS_WITH }}
+          ALACRITY_USERNAME=${{ secrets.ALACRITY_USERNAME }}
+          ALACRITY_PASSWORD=${{ secrets.ALACRITY_PASSWORD }}
           STATICRYPT_PASSWORD=${{ secrets.STATICRYPT_PASSWORD }}
           EOF
 

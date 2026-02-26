@@ -218,8 +218,9 @@ async function main() {
 
         const hasCCData = statsData.years && Object.keys(statsData.years).length > 0;
         const hasSedgwickData = statsData.sedgwick?.dailySnapshots?.length > 0;
+        const hasAlacrityData = statsData.alacrity?.dailySnapshots?.length > 0;
 
-        if (!hasCCData && !hasSedgwickData) {
+        if (!hasCCData && !hasSedgwickData && !hasAlacrityData) {
           showNoData(true);
           return;
         }
@@ -232,9 +233,10 @@ async function main() {
           createAllCharts();
           updateAllTables();
           updateDataTable();
-        } else {
-          // No CC data but have Sedgwick - auto-switch to Sedgwick view
+        } else if (hasSedgwickData) {
           switchSource('sedgwick');
+        } else if (hasAlacrityData) {
+          switchSource('alacrity');
         }
 
         if (statsData.lastUpdated) {
