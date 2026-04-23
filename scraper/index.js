@@ -14,6 +14,7 @@ const {
 } = require('./utils');
 const { scrapeSedgwick, storeSedgwickSnapshot } = require('./sedgwick');
 const { scrapeAlacrity, storeAlacritySnapshot } = require('./alacrity');
+const { scrapeIconSedgwick, storeIconSedgwickSnapshot } = require('./icon-sedgwick');
 
 // Tab names to iterate through
 const TABS = ['ASSIGNMENTS', 'AVG TIP', 'POMS', 'REINSPECTIONS', 'SURVEYS', 'QA FEEDBACK'];
@@ -554,6 +555,13 @@ async function runScraper({ initial = false, daily = false }) {
     const alacrityData = await scrapeAlacrity(browser);
     if (alacrityData) {
       storeAlacritySnapshot(stats, alacrityData);
+      saveStats(stats);
+    }
+
+    // Scrape Icon Sedgwick (multi-location)
+    const iconData = await scrapeIconSedgwick(browser);
+    if (iconData) {
+      storeIconSedgwickSnapshot(stats, iconData);
       saveStats(stats);
     }
 

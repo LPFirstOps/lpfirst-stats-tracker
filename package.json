@@ -16,6 +16,8 @@
     "update:cc": "npm run decrypt && npm run scrape:cc && npm run encrypt:data",
     "update:sedgwick": "npm run decrypt && npm run scrape:sedgwick && npm run encrypt:data",
     "update:alacrity": "npm run decrypt && npm run scrape:alacrity && npm run encrypt:data",
+    "scrape:icon": "node scraper/icon-sedgwick.js",
+    "update:icon": "npm run decrypt && npm run scrape:icon && npm run encrypt:data",
     "update:initial": "npm run scrape:initial && npm run encrypt",
     "serve": "npx serve ."
   },

@@ -15,17 +15,100 @@ async function loginSedgwick(page, { url, username, password }) {
 
   await page.goto(url);
   await page.waitForLoadState('networkidle');
+  // Salesforce login pages can be slow to render inputs
+  await page.waitForTimeout(3000);
+
+  // Try multiple selector strategies for the username field
+  const usernameSelectors = [
+    () => page.getByRole('textbox', { name: 'Username' }),
+    () => page.getByRole('textbox', { name: 'Email' }),
+    () => page.getByLabel('Username'),
+    () => page.getByLabel('Email'),
+    () => page.locator('input[name="username"]'),
+    () => page.locator('input[type="email"]'),
+    () => page.locator('input#username'),
+  ];
+
+  let userField = null;
+  for (const sel of usernameSelectors) {
+    try {
+      const el = sel();
+      if (await el.isVisible({ timeout: 2000 }).catch(() => false)) {
+        userField = el;
+        console.log('  Found username field');
+        break;
+      }
+    } catch (e) { continue; }
+  }
+
+  if (!userField) {
+    console.error('Could not find username field on login page');
+    return false;
+  }
+
+  // Try multiple selector strategies for the password field
+  const passwordSelectors = [
+    () => page.getByRole('textbox', { name: 'Password' }),
+    () => page.getByLabel('Password'),
+    () => page.locator('input[name="password"]'),
+    () => page.locator('input[type="password"]'),
+    () => page.locator('input#password'),
+  ];
+
+  let passField = null;
+  for (const sel of passwordSelectors) {
+    try {
+      const el = sel();
+      if (await el.isVisible({ timeout: 2000 }).catch(() => false)) {
+        passField = el;
+        console.log('  Found password field');
+        break;
+      }
+    } catch (e) { continue; }
+  }
+
+  if (!passField) {
+    console.error('Could not find password field on login page');
+    return false;
+  }
 
   // Fill login form
-  await page.getByRole('textbox', { name: 'Username' }).fill(username);
-  await page.getByRole('textbox', { name: 'Password' }).fill(password);
-  await page.getByRole('button', { name: 'Log In' }).click();
+  await userField.fill(username);
+  await passField.fill(password);
+
+  // Try multiple selectors for the login button
+  const loginSelectors = [
+    () => page.getByRole('button', { name: 'Log In' }),
+    () => page.getByRole('button', { name: 'Login' }),
+    () => page.locator('button[type="submit"]'),
+    () => page.locator('input[type="submit"]'),
+    () => page.locator('button:has-text("Log In")'),
+    () => page.locator('button:has-text("Login")'),
+  ];
+
+  let loginBtn = null;
+  for (const sel of loginSelectors) {
+    try {
+      const el = sel();
+      if (await el.isVisible({ timeout: 2000 }).catch(() => false)) {
+        loginBtn = el;
+        break;
+      }
+    } catch (e) { continue; }
+  }
+
+  if (!loginBtn) {
+    console.error('Could not find login button');
+    return false;
+  }
+
+  await loginBtn.click();
 
   // Wait for redirect to contractor portal
   console.log('Waiting for Sedgwick dashboard...');
   await page.waitForURL(/\/contractor\/s\//i, { timeout: 30000 });
   // Salesforce takes time to load all components and iframe widgets
-  await page.waitForTimeout(10000);
+  await page.waitForTimeout(15000);
 
   console.log('Sedgwick login successful!');
   return true;
@@ -315,7 +398,10 @@ function storeSedgwickSnapshot(stats, sedgwickData) {
 
 module.exports = {
   scrapeSedgwick,
-  storeSedgwickSnapshot
+  storeSedgwickSnapshot,
+  loginSedgwick,
+  extractMainPageData,
+  extractDashboardData
 };
 
 // Allow standalone execution for testing

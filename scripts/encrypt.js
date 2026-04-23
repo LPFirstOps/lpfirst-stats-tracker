@@ -219,8 +219,9 @@ async function main() {
         const hasCCData = statsData.years && Object.keys(statsData.years).length > 0;
         const hasSedgwickData = statsData.sedgwick?.dailySnapshots?.length > 0;
         const hasAlacrityData = statsData.alacrity?.dailySnapshots?.length > 0;
+        const hasIconData = statsData.icon?.locations && Object.values(statsData.icon.locations).some(l => l.dailySnapshots?.length > 0);
 
-        if (!hasCCData && !hasSedgwickData && !hasAlacrityData) {
+        if (!hasCCData && !hasSedgwickData && !hasAlacrityData && !hasIconData) {
           showNoData(true);
           return;
         }
