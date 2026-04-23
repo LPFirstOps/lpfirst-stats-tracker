@@ -234,10 +234,23 @@ async function main() {
           createAllCharts();
           updateAllTables();
           updateDataTable();
-        } else if (hasSedgwickData) {
-          switchSource('sedgwick');
-        } else if (hasAlacrityData) {
-          switchSource('alacrity');
+        }
+
+        var savedCompany = localStorage.getItem('dashboard_company');
+        var savedSource = localStorage.getItem('dashboard_source');
+        var savedIconLocation = localStorage.getItem('dashboard_iconLocation');
+
+        if (savedCompany && savedCompany === 'icon' && hasIconData) {
+          switchCompany('icon', true);
+          if (savedIconLocation) switchIconLocation(savedIconLocation, true);
+        } else if (savedCompany === 'aaction' && savedSource) {
+          if (savedSource === 'sedgwick' && hasSedgwickData) switchSource('sedgwick', true);
+          else if (savedSource === 'alacrity' && hasAlacrityData) switchSource('alacrity', true);
+          else if (!hasCCData && hasSedgwickData) switchSource('sedgwick', true);
+          else if (!hasCCData && hasAlacrityData) switchSource('alacrity', true);
+        } else if (!hasCCData) {
+          if (hasSedgwickData) switchSource('sedgwick', true);
+          else if (hasAlacrityData) switchSource('alacrity', true);
         }
 
         if (statsData.lastUpdated) {
