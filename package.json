@@ -26,9 +26,10 @@
   "license": "UNLICENSED",
   "type": "commonjs",
   "dependencies": {
+    "@playwright/test": "^1.60.0",
     "dotenv": "^17.2.3",
     "otplib": "^13.2.1",
-    "playwright": "^1.58.1"
+    "playwright": "^1.60.0"
   },
   "devDependencies": {
     "staticrypt": "^3.5.4"
