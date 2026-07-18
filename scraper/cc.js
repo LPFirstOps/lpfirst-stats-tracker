@@ -1,8 +1,8 @@
-// Standalone ContractorConnection scraper
+// Standalone ContractorConnection scraper (A-Action)
 if (require.main === module) {
   const { runStandalone } = require('./utils');
-  const { scrapeContractorConnection } = require('./index');
+  const { scrapeAactionCC } = require('./index');
   runStandalone('ContractorConnection', async (browser, stats) => {
-    await scrapeContractorConnection(browser, stats, { daily: true });
+    await scrapeAactionCC(browser, stats, { daily: true });
   });
 }

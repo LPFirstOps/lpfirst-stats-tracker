@@ -29,7 +29,7 @@ npm run encrypt          # Full encryption: data + StatiCrypt HTML wrapper
 npm run serve
 ```
 
-All commands require `STATICRYPT_PASSWORD` in `.env`. Scraper commands also need portal credentials (`CC_USERNAME`, `CC_PASSWORD`, `CC_2FA_SECRET`, `SEDGWICK_*`, `ALACRITY_*`).
+All commands require `STATICRYPT_PASSWORD` in `.env`. Scraper commands also need portal credentials, prefixed per company: `AACTION_CC_*` (username, password, 2FA secret), `AACTION_SEDGWICK_*`, `AACTION_ALACRITY_*`, `ICON_SEDGWICK_*`, `MOYERS_SEDGWICK_*`, `MOYERS_ALACRITY_*`.
 
 ## Architecture
 
@@ -48,7 +48,8 @@ All commands require `STATICRYPT_PASSWORD` in `.env`. Scraper commands also need
 - `.staticrypt.json` - Salt used for encryption/decryption (must not change after initial setup)
 
 ### Scraper Structure
-- `scraper/index.js` - Main orchestrator; runs CC, Sedgwick, and Alacrity scrapers
+- `scraper/index.js` - Main orchestrator; runs all company scrapers
+- `scraper/contractor-connection.js` - Parameterized CC scraper (creds + target container), used for both A-Action (stats root) and Moyer's (`stats.moyers`)
 - `scraper/auth.js` - Auth0 login with TOTP 2FA for ContractorConnection
 - `scraper/utils.js` - Shared utilities (data load/save, date formatting, diff calculation, `runStandalone()` helper)
 - `scraper/cc.js`, `sedgwick.js`, `alacrity.js` - Standalone entry points for individual scrapers

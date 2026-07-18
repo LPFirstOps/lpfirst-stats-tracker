@@ -26,9 +26,20 @@ async function loginAlacrity(page, { startsWith, username, password }) {
   // Click Login
   await page.getByRole('button', { name: 'Login' }).click();
 
-  // Wait for redirect after login (may go to Home.aspx or other pages)
+  // Wait for redirect after login (may go to Home.aspx or an MFA challenge)
   console.log('Waiting for Alacrity dashboard...');
-  await page.waitForURL(/em\.alacrity\.net/i, { timeout: 30000 });
+  await page.waitForURL(/em\.alacrity\.net|MFAAuth\.aspx/i, { timeout: 30000 });
+
+  if (/MFAAuth\.aspx/i.test(page.url())) {
+    if (process.env.HEADLESS !== 'false') {
+      console.error('Alacrity account requires interactive MFA (security code via email/phone).');
+      console.error('Run with HEADLESS=false to complete the challenge manually, or disable MFA on the account.');
+      return false;
+    }
+    console.log('MFA challenge detected — complete it in the browser window (waiting up to 10 minutes)...');
+    await page.waitForURL(/em\.alacrity\.net/i, { timeout: 600000 });
+  }
+
   await page.waitForLoadState('networkidle');
   await page.waitForTimeout(2000);
 
@@ -37,17 +48,10 @@ async function loginAlacrity(page, { startsWith, username, password }) {
 }
 
 /**
- * Navigate to CIP Dashboard and trigger report load
+ * Click the View button and wait for the CIP report to finish loading
  * @param {import('playwright').Page} page
- * @param {string} url - CIP report URL
  */
-async function navigateToCIPDashboard(page, url) {
-  console.log('Navigating to CIP Dashboard...');
-
-  await page.goto(url);
-  await page.waitForLoadState('networkidle');
-
-  // Click View button to load the report
+async function clickViewAndWait(page) {
   await page.getByRole('button', { name: 'View' }).click();
 
   // Wait for "Loading...." to appear and then disappear
@@ -59,8 +63,78 @@ async function navigateToCIPDashboard(page, url) {
   }
   await page.locator('text=Loading').waitFor({ state: 'hidden', timeout: 60000 });
   await page.waitForTimeout(2000);
+}
 
-  console.log('CIP Dashboard loaded!');
+/**
+ * List the options in the contractor combobox on the CIP report page.
+ * The combobox is a custom ASP.NET AJAX control, not a native <select>.
+ * @param {import('playwright').Page} page
+ * @returns {Promise<Array<{label: string, value: string}>>}
+ */
+async function getContractorOptions(page) {
+  // Open the dropdown so its item list is fully populated
+  await page.locator('[id$="ContractorComboBox_TextField"]').click().catch(() => {});
+  await page.waitForTimeout(1500);
+
+  const options = await page.evaluate(() =>
+    [...document.querySelectorAll('#ContractorComboBox_ItemTable td')]
+      .map(td => ({
+        label: td.querySelector('div')?.textContent.trim(),
+        value: td.querySelector('input[type="hidden"]')?.value
+      }))
+      .filter(o => o.label)
+  );
+
+  // Close the dropdown again — this custom combo only closes on an outside click
+  await page.mouse.click(5, 5);
+  await page.waitForTimeout(500);
+
+  return options;
+}
+
+/**
+ * Select a contractor in the combobox by its label
+ * @param {import('playwright').Page} page
+ * @param {string} label
+ */
+async function selectContractor(page, label) {
+  const current = await page.locator('[id$="ContractorComboBox_TextField"]').inputValue();
+  if (current === label) return;
+
+  await page.locator('[id$="ContractorComboBox_TextField"]').click();
+  await page.locator(`#ContractorComboBox_ItemTable div[title="${label}"]`).click();
+  await page.waitForLoadState('networkidle');
+  await page.waitForTimeout(1500);
+}
+
+/**
+ * Navigate to the CIP report and scrape it for every contractor in the dropdown.
+ * @param {import('playwright').Page} page
+ * @param {string} url - CIP report URL
+ * @returns {Promise<Object>} { dashboard } for a single contractor, or
+ *   { contractors: { [label]: dashboard } } when the login covers multiple entities
+ */
+async function scrapeCIPReport(page, url) {
+  console.log('Navigating to CIP Dashboard...');
+  await page.goto(url);
+  await page.waitForLoadState('networkidle');
+
+  const options = await getContractorOptions(page);
+  console.log(`Contractor options: ${options.map(o => o.label).join(' | ') || '(none found)'}`);
+
+  if (options.length <= 1) {
+    await clickViewAndWait(page);
+    return { dashboard: await extractCIPData(page) };
+  }
+
+  const contractors = {};
+  for (const option of options) {
+    console.log(`\n--- Contractor: ${option.label} ---`);
+    await selectContractor(page, option.label);
+    await clickViewAndWait(page);
+    contractors[option.label] = await extractCIPData(page);
+  }
+  return { contractors };
 }
 
 /**
@@ -230,9 +304,9 @@ function flattenCIPData(dashboard) {
  * @returns {Promise<Object|null>} Scraped data or null on failure
  */
 async function scrapeAlacrity(browser) {
-  const { ALACRITY_URL, ALACRITY_STARTS_WITH, ALACRITY_USERNAME, ALACRITY_PASSWORD } = process.env;
+  const { AACTION_ALACRITY_URL, AACTION_ALACRITY_STARTS_WITH, AACTION_ALACRITY_USERNAME, AACTION_ALACRITY_PASSWORD } = process.env;
 
-  if (!ALACRITY_URL || !ALACRITY_USERNAME || !ALACRITY_PASSWORD) {
+  if (!AACTION_ALACRITY_URL || !AACTION_ALACRITY_USERNAME || !AACTION_ALACRITY_PASSWORD) {
     console.log('Alacrity credentials not configured, skipping...');
     return null;
   }
@@ -249,9 +323,9 @@ async function scrapeAlacrity(browser) {
   try {
     // Login
     const loginSuccess = await loginAlacrity(page, {
-      startsWith: ALACRITY_STARTS_WITH || 'EM',
-      username: ALACRITY_USERNAME,
-      password: ALACRITY_PASSWORD
+      startsWith: AACTION_ALACRITY_STARTS_WITH || 'EM',
+      username: AACTION_ALACRITY_USERNAME,
+      password: AACTION_ALACRITY_PASSWORD
     });
 
     if (!loginSuccess) {
@@ -259,15 +333,12 @@ async function scrapeAlacrity(browser) {
       return null;
     }
 
-    // Navigate to CIP Dashboard
-    await navigateToCIPDashboard(page, ALACRITY_URL);
-
-    // Extract CIP data
-    const cipData = await extractCIPData(page);
+    // Navigate to CIP Dashboard and scrape every contractor in the dropdown
+    const cipData = await scrapeCIPReport(page, AACTION_ALACRITY_URL);
 
     const result = {
       date: formatDate(),
-      dashboard: cipData
+      ...cipData
     };
 
     console.log('========== Alacrity scraping complete! ==========\n');
@@ -295,12 +366,31 @@ function storeAlacritySnapshot(stats, alacrityData) {
     stats.alacrity = { dailySnapshots: [] };
   }
 
-  // Calculate diff from previous snapshot
-  const previousSnapshot = getPreviousSnapshot(stats.alacrity.dailySnapshots);
+  if (alacrityData.contractors) {
+    // Multiple contractor entities under one login: keep a snapshot stream per contractor
+    if (!stats.alacrity.contractors) stats.alacrity.contractors = {};
+    for (const [label, dashboard] of Object.entries(alacrityData.contractors)) {
+      console.log(`\n[${label}]`);
+      const stream = stats.alacrity.contractors[label] ||
+        (stats.alacrity.contractors[label] = { dailySnapshots: [] });
+      appendCIPSnapshot(stream, { date: alacrityData.date, dashboard });
+    }
+  } else {
+    appendCIPSnapshot(stats.alacrity, alacrityData);
+  }
+}
+
+/**
+ * Append (or update) a daily CIP snapshot in a snapshot stream, with diff vs previous day
+ * @param {Object} stream - { dailySnapshots: [] }
+ * @param {Object} data - { date, dashboard }
+ */
+function appendCIPSnapshot(stream, data) {
+  const previousSnapshot = getPreviousSnapshot(stream.dailySnapshots);
   let diff = null;
 
   if (previousSnapshot) {
-    const current = flattenCIPData(alacrityData.dashboard);
+    const current = flattenCIPData(data.dashboard);
     const previous = flattenCIPData(previousSnapshot.dashboard);
 
     diff = calculateDiff(current, previous);
@@ -317,30 +407,33 @@ function storeAlacritySnapshot(stats, alacrityData) {
   }
 
   const snapshot = {
-    ...alacrityData,
+    ...data,
     diff,
     previousDate: previousSnapshot?.date || null
   };
 
   // Check if we already have a snapshot for today
-  const todayIndex = stats.alacrity.dailySnapshots.findIndex(s => s.date === formatDate());
+  const todayIndex = stream.dailySnapshots.findIndex(s => s.date === formatDate());
   if (todayIndex >= 0) {
-    stats.alacrity.dailySnapshots[todayIndex] = snapshot;
+    stream.dailySnapshots[todayIndex] = snapshot;
     console.log(`Updated existing Alacrity snapshot for ${formatDate()}`);
   } else {
-    stats.alacrity.dailySnapshots.push(snapshot);
+    stream.dailySnapshots.push(snapshot);
     console.log(`Alacrity snapshot saved for ${formatDate()}`);
   }
 
   // Keep last 365 days
-  if (stats.alacrity.dailySnapshots.length > 365) {
-    stats.alacrity.dailySnapshots = stats.alacrity.dailySnapshots.slice(-365);
+  if (stream.dailySnapshots.length > 365) {
+    stream.dailySnapshots = stream.dailySnapshots.slice(-365);
   }
 }
 
 module.exports = {
   scrapeAlacrity,
-  storeAlacritySnapshot
+  storeAlacritySnapshot,
+  loginAlacrity,
+  scrapeCIPReport,
+  extractCIPData
 };
 
 // Allow standalone execution for testing

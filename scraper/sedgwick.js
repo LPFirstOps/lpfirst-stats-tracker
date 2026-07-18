@@ -277,9 +277,9 @@ async function extractDashboardData(page) {
  * @returns {Promise<Object|null>} Scraped data or null on failure
  */
 async function scrapeSedgwick(browser) {
-  const { SEDGWICK_URL, SEDGWICK_USERNAME, SEDGWICK_PASSWORD } = process.env;
+  const { AACTION_SEDGWICK_URL, AACTION_SEDGWICK_USERNAME, AACTION_SEDGWICK_PASSWORD } = process.env;
 
-  if (!SEDGWICK_URL || !SEDGWICK_USERNAME || !SEDGWICK_PASSWORD) {
+  if (!AACTION_SEDGWICK_URL || !AACTION_SEDGWICK_USERNAME || !AACTION_SEDGWICK_PASSWORD) {
     console.log('Sedgwick credentials not configured, skipping...');
     return null;
   }
@@ -296,9 +296,9 @@ async function scrapeSedgwick(browser) {
   try {
     // Login
     const loginSuccess = await loginSedgwick(page, {
-      url: SEDGWICK_URL,
-      username: SEDGWICK_USERNAME,
-      password: SEDGWICK_PASSWORD
+      url: AACTION_SEDGWICK_URL,
+      username: AACTION_SEDGWICK_USERNAME,
+      password: AACTION_SEDGWICK_PASSWORD
     });
 
     if (!loginSuccess) {
