@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LP First Stats</title>
+<script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen p-4 md:p-8">
+  <div class="max-w-4xl mx-auto">
+    <div class="flex items-center justify-between mb-6">
+      <h1 class="text-2xl font-semibold">LP First Stats</h1>
+      <div class="flex gap-4 text-sm">
+        <a href="/admin.html" id="adminLink" class="hidden text-slate-400 hover:text-slate-200">Admin</a>
+        <button id="signout" class="text-slate-400 hover:text-slate-200">Sign out</button>
+      </div>
+    </div>
+    <p id="who" class="text-sm text-slate-400 mb-6"></p>
+    <div id="companies" class="grid gap-4 md:grid-cols-2"></div>
+    <!--
+      PORT PENDING: the full Chart.js dashboard lives in index.html.bak (gitignored,
+      not in the repo). To port it: paste its markup + inline JS here, delete the
+      StatiCrypt decrypt block, and replace it with:
+
+        const statsData = await (await fetch("/api/statsdata", { credentials: "include" })).json();
+
+      Everything downstream (getSnapshotsByPeriod, calculateSummary, charts) works
+      unchanged — /api/statsdata reproduces the legacy statsData shape, scoped to
+      the signed-in user's companies.
+    -->
+  </div>
+<script>
+const $ = (id) => document.getElementById(id);
+
+async function api(path) {
+  const res = await fetch(path, { credentials: "include" });
+  if (res.status === 401) { location.href = "/login.html"; throw new Error("unauthenticated"); }
+  return res.json();
+}
+
+$("signout").onclick = async () => {
+  await fetch("/api/auth/sign-out", { method: "POST", credentials: "include" });
+  location.href = "/login.html";
+};
+
+(async () => {
+  const me = await api("/api/me");
+  $("who").textContent = `${me.user.email}${me.user.role === "admin" ? " · super admin" : ""}`;
+  if (me.companies.some((c) => ["admin", "owner", "superadmin"].includes(c.role))) {
+    $("adminLink").classList.remove("hidden");
+  }
+  for (const org of me.companies) {
+    const summary = await api(`/api/summary?company=${org.slug}`);
+    const rows = summary.map((s) =>
+      `<div class="flex justify-between text-sm py-1 border-b border-slate-800">
+        <span>${s.source}${s.location ? " · " + s.location : ""}</span>
+        <span class="text-slate-400">${s.count} snapshots · latest ${s.latest}</span>
+      </div>`).join("") || '<p class="text-sm text-slate-500">No data yet.</p>';
+    $("companies").insertAdjacentHTML("beforeend",
+      `<div class="bg-slate-900 rounded-xl p-5">
+        <h2 class="text-lg font-medium mb-3">${org.name}</h2>${rows}
+      </div>`);
+  }
+})().catch(console.error);
+</script>
+</body>
+</html>

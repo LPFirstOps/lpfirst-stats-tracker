@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LP First Stats — Invitation</title>
+<script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen flex items-center justify-center p-4">
+  <div class="w-full max-w-sm bg-slate-900 rounded-xl p-6 shadow-xl">
+    <h1 class="text-xl font-semibold text-center mb-1">You're invited</h1>
+    <p class="text-sm text-slate-400 text-center mb-4">Create an account (or sign in) to accept.</p>
+    <p id="error" class="hidden text-red-400 text-sm mb-3"></p>
+    <form id="form" class="space-y-3">
+      <input id="name" type="text" placeholder="Name" class="w-full rounded bg-slate-800 border border-slate-700 px-3 py-2">
+      <input id="email" type="email" placeholder="Email" required class="w-full rounded bg-slate-800 border border-slate-700 px-3 py-2">
+      <input id="password" type="password" placeholder="Password" required minlength="8" class="w-full rounded bg-slate-800 border border-slate-700 px-3 py-2">
+      <button class="w-full rounded bg-indigo-600 hover:bg-indigo-500 py-2 font-medium">Accept invitation</button>
+    </form>
+    <button id="toggle" class="mt-4 text-sm text-slate-400 hover:text-slate-200 w-full text-center">Already have an account? Sign in</button>
+  </div>
+<script>
+const params = new URLSearchParams(location.search);
+const invitationId = params.get("id");
+let mode = "signup";
+const $ = (id) => document.getElementById(id);
+if (params.get("email")) $("email").value = params.get("email");
+
+$("toggle").onclick = () => {
+  mode = mode === "signup" ? "signin" : "signup";
+  $("name").classList.toggle("hidden", mode === "signin");
+  $("toggle").textContent = mode === "signup" ? "Already have an account? Sign in" : "Need an account? Sign up";
+};
+
+async function post(path, body) {
+  const res = await fetch(path, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify(body)
+  });
+  if (!res.ok) throw (await res.json().catch(() => ({ message: "Request failed" })));
+  return res.json().catch(() => ({}));
+}
+
+$("form").onsubmit = async (e) => {
+  e.preventDefault();
+  $("error").classList.add("hidden");
+  try {
+    if (!invitationId) throw { message: "Missing invitation id" };
+    const email = $("email").value, password = $("password").value;
+    if (mode === "signup") {
+      await post("/api/auth/sign-up/email", { email, password, name: $("name").value || email.split("@")[0] });
+    } else {
+      await post("/api/auth/sign-in/email", { email, password });
+    }
+    await post("/api/auth/organization/accept-invitation", { invitationId });
+    location.href = "/";
+  } catch (err) {
+    $("error").textContent = err.message || "Failed to accept invitation";
+    $("error").classList.remove("hidden");
+  }
+};
+</script>
+</body>
+</html>

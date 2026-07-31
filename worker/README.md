@@ -1,0 +1,103 @@
+# LP First Stats — Cloudflare Worker
+
+Node app on Cloudflare Workers replacing the StatiCrypt static dashboard.
+Hono (routing) + Better Auth (auth, companies, invitations, MCP OAuth) +
+Drizzle ORM + D1 (SQL data model). Scrapers stay in GitHub Actions and push
+snapshots to `POST /api/ingest`.
+
+## Permission model
+
+| Role | How | Can |
+|---|---|---|
+| User | org `member` | Read stats for their companies only. Cannot invite. |
+| Company admin | org `admin` / `owner` | Everything a user can, plus invite users/admins to **their** companies. |
+| Super admin | `user.role = 'admin'` (admin plugin) | All companies, invite/promote anywhere, create orgs. |
+
+Companies are Better Auth organizations: `aaction`, `icon`, `moyers`.
+
+## First deploy
+
+```bash
+cd worker
+npm install
+npx wrangler d1 create lpfirst-stats        # paste database_id into wrangler.jsonc
+npm run db:migrate:remote                   # creates tables + seeds the 3 companies
+npx wrangler secret put BETTER_AUTH_SECRET  # openssl rand -hex 32
+npx wrangler secret put INGEST_TOKEN        # openssl rand -hex 32
+npx wrangler secret put RESEND_API_KEY      # optional — invites log to console without it
+npm run deploy
+```
+
+Set `BASE_URL` in `wrangler.jsonc` to the deployed URL (workers.dev or custom
+domain) and redeploy — OAuth issuer/redirect URLs derive from it.
+
+**Bootstrap yourself:** sign up at `/login.html`, then:
+
+```bash
+npx wrangler d1 execute lpfirst-stats --remote --command \
+  "UPDATE user SET role='admin' WHERE email='you@example.com'"
+npx wrangler d1 execute lpfirst-stats --remote --command \
+  "INSERT INTO member (id, organization_id, user_id, role, created_at) \
+   SELECT 'mem_' || o.slug, o.id, u.id, 'owner', CAST(strftime('%s','now') AS INTEGER)*1000 \
+   FROM organization o, user u WHERE u.email='you@example.com'"
+```
+
+## Historical migration
+
+From the repo root (needs `STATICRYPT_PASSWORD` in `.env`):
+
+```bash
+npm run decrypt
+WORKER_URL=https://... INGEST_TOKEN=... node scripts/sync-to-d1.js --all
+npm run encrypt:data
+```
+
+Then add `WORKER_URL` and `INGEST_TOKEN` as GitHub Actions secrets — the daily
+workflow already has a "Sync to D1" step that no-ops until they exist.
+
+## MCP
+
+Endpoint: `https://<base-url>/mcp` (streamable HTTP). OAuth 2.1 with dynamic
+client registration via the Better Auth MCP plugin — add it to Claude as a
+custom connector with just the URL; the browser login flow handles the rest.
+All tools are scoped to the companies the authenticated user belongs to:
+
+- `list_companies` — accessible companies + role
+- `list_metrics` — discover metric names per company/source
+- `query_metrics` — tidy rows filtered by source/location/tab/type/date range
+- `get_snapshot` — raw scraped payload for a date (or latest)
+- `company_summary` — freshness/coverage check
+
+## Data model
+
+- `snapshots` — raw JSON payload per (company, source, location, date).
+  CC yearly aggregates use `date='YYYY'`; Icon locations use `location`.
+- `metrics` — tidy long format: (company, source, location, date, tab,
+  assignment_type, metric, value, text_value). Metric names are dot-paths into
+  the original payload. This is what SQL/MCP queries hit.
+- Everything else is Better Auth (user/session/account/verification,
+  organization/member/invitation, oauth_*).
+
+## Dashboard port (TODO)
+
+`public/index.html` is a placeholder. The real dashboard source is
+`index.html.bak` (gitignored — not in the repo). To port: paste its content
+into `public/index.html`, delete the StatiCrypt decrypt block, and load data
+with `fetch("/api/statsdata")`, which returns the legacy `statsData` shape
+scoped to the signed-in user. See the comment in `public/index.html`.
+
+## Cutover checklist
+
+1. Deploy worker, run migrations, bootstrap super admin
+2. `sync-to-d1.js --all` historical migration; spot-check `/api/summary`
+3. Add `WORKER_URL` + `INGEST_TOKEN` GH secrets; verify next daily run syncs
+4. Port dashboard from `index.html.bak`; invite the team
+5. Connect Claude to `/mcp`
+6. Remove StatiCrypt steps from the workflow, retire GitHub Pages
+
+## Notes
+
+- Better Auth's `mcp` plugin is being folded into their OAuth Provider plugin;
+  swap on the next better-auth major (same helper names).
+- Schema was hand-written to match better-auth v1.3; after upgrading, verify
+  with `npm run auth:generate` and diff against `src/db/schema.ts`.

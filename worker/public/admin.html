@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LP First Stats — Admin</title>
+<script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen p-4 md:p-8">
+  <div class="max-w-3xl mx-auto">
+    <div class="flex items-center justify-between mb-6">
+      <h1 class="text-2xl font-semibold">Admin</h1>
+      <a href="/" class="text-sm text-slate-400 hover:text-slate-200">← Dashboard</a>
+    </div>
+    <p id="error" class="hidden text-red-400 text-sm mb-4"></p>
+    <div id="orgs" class="space-y-6"></div>
+  </div>
+<script>
+const $ = (id) => document.getElementById(id);
+const err = (m) => { $("error").textContent = m; $("error").classList.remove("hidden"); };
+
+async function api(path, opts = {}) {
+  const res = await fetch(path, {
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    ...opts
+  });
+  if (!res.ok) throw (await res.json().catch(() => ({ message: res.statusText })));
+  return res.json().catch(() => ({}));
+}
+
+async function load() {
+  const me = await api("/api/me").catch(() => { location.href = "/login.html"; });
+  if (!me) return;
+  const adminOrgs = me.companies.filter((c) => ["admin", "owner", "superadmin"].includes(c.role));
+  if (!adminOrgs.length) { err("You don't have admin access to any company."); return; }
+
+  const container = $("orgs");
+  container.innerHTML = "";
+  for (const org of adminOrgs) {
+    const card = document.createElement("div");
+    card.className = "bg-slate-900 rounded-xl p-5";
+    card.innerHTML = `
+      <h2 class="text-lg font-medium mb-3">${org.name} <span class="text-xs text-slate-500">(${org.role})</span></h2>
+      <div class="flex gap-2 mb-4">
+        <input type="email" placeholder="email@example.com" class="invite-email flex-1 rounded bg-slate-800 border border-slate-700 px-3 py-2 text-sm">
+        <select class="invite-role rounded bg-slate-800 border border-slate-700 px-2 py-2 text-sm">
+          <option value="member">User</option>
+          <option value="admin">Admin</option>
+        </select>
+        <button class="invite-btn rounded bg-indigo-600 hover:bg-indigo-500 px-3 py-2 text-sm">Invite</button>
+      </div>
+      <div class="members text-sm text-slate-300">Loading members…</div>`;
+    container.appendChild(card);
+
+    card.querySelector(".invite-btn").onclick = async () => {
+      try {
+        await api("/api/auth/organization/invite-member", {
+          method: "POST",
+          body: JSON.stringify({
+            email: card.querySelector(".invite-email").value,
+            role: card.querySelector(".invite-role").value,
+            organizationId: org.id
+          })
+        });
+        card.querySelector(".invite-email").value = "";
+        loadMembers(card, org);
+      } catch (e) { err(e.message || "Invite failed"); }
+    };
+
+    loadMembers(card, org);
+  }
+}
+
+async function loadMembers(card, org) {
+  try {
+    const full = await api(`/api/auth/organization/get-full-organization?organizationId=${org.id}`);
+    const members = (full.members ?? []).map((m) =>
+      `<div class="flex justify-between py-1 border-b border-slate-800"><span>${m.user?.email ?? m.userId}</span><span class="text-slate-500">${m.role}</span></div>`
+    ).join("");
+    const invites = (full.invitations ?? []).filter((i) => i.status === "pending").map((i) =>
+      `<div class="flex justify-between py-1 border-b border-slate-800 text-slate-500"><span>${i.email}</span><span>invited (${i.role ?? "member"})</span></div>`
+    ).join("");
+    card.querySelector(".members").innerHTML = members + invites || "No members yet.";
+  } catch {
+    card.querySelector(".members").textContent = "Could not load members.";
+  }
+}
+
+load().catch((e) => err(e.message || "Failed to load"));
+</script>
+</body>
+</html>
