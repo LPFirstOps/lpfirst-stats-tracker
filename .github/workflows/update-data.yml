@@ -66,8 +66,19 @@ jobs:
           MOYERS_ALACRITY_PASSWORD=${{ secrets.MOYERS_ALACRITY_PASSWORD }}
           EOF
 
-      - name: Run update (decrypt, scrape, encrypt)
-        run: npm run update
+      - name: Decrypt and scrape
+        run: npm run decrypt && npm run scrape:daily
+
+      # Pushes today's snapshots to the Cloudflare Worker (D1). No-ops with a
+      # warning until WORKER_URL / INGEST_TOKEN secrets are configured.
+      - name: Sync to D1
+        run: node scripts/sync-to-d1.js
+        env:
+          WORKER_URL: ${{ secrets.WORKER_URL }}
+          INGEST_TOKEN: ${{ secrets.INGEST_TOKEN }}
+
+      - name: Re-encrypt data
+        run: npm run encrypt:data
 
       - name: Commit and push changes
         id: commit

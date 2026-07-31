@@ -81,3 +81,15 @@ CC data is organized by **tab** (assignments, avgtip, poms, reinspections, surve
 - After editing `index.html.bak`, run `npm run encrypt` to regenerate the encrypted `index.html`
 - The encryption scripts share crypto logic (PBKDF2 rounds, AES-CBC) that must stay in sync across `encrypt.js`, `encrypt-data.js`, `decrypt.js`, and the injected client-side code
 - `HEADLESS=false` env var runs scrapers with visible browser for debugging
+
+## Cloudflare Worker (worker/)
+
+The `worker/` directory contains the replacement backend: Hono + Better Auth +
+Drizzle + D1 on Cloudflare Workers, with per-company permissions (users /
+company admins / super admins), email+password auth with invitations, an
+authenticated `/mcp` endpoint (OAuth 2.1 + dynamic client registration), and a
+`POST /api/ingest` endpoint that GitHub Actions pushes scraped snapshots to via
+`scripts/sync-to-d1.js`. See `worker/README.md` for setup, the cutover
+checklist, and the data model (raw `snapshots` + tidy `metrics` tables replace
+the encrypted JSON store). The StatiCrypt pipeline remains in place until
+cutover completes.
