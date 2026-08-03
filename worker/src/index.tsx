@@ -7,6 +7,8 @@ import { createAuth, type Env } from "./auth";
 import { handleIngest, type IngestBody } from "./ingest";
 import { handleMcp } from "./mcp";
 import { accessibleOrgs, findOrg, type OrgAccess } from "./rbac";
+import { getAlbiConfig, albiClientFor, syncAlbiOrg, syncAlbiProject, syncAllAlbi } from "./albi/sync";
+import { ALBI_PATHS } from "./albi/client";
 import { LoginPage } from "./pages/Login";
 import { AcceptInvitationPage } from "./pages/AcceptInvitation";
 import { AdminPage, type AdminCard } from "./pages/Admin";
@@ -55,6 +57,11 @@ function pageUser(session: any, orgs: OrgAccess[]) {
     superadmin,
     admin: superadmin || orgs.some((o) => ["admin", "owner", "superadmin"].includes(o.role))
   };
+}
+
+function isOrgAdmin(orgs: OrgAccess[], orgId: string) {
+  const o = orgs.find((x) => x.id === orgId);
+  return !!o && ["admin", "owner", "superadmin"].includes(o.role);
 }
 
 async function summaryFor(d: ReturnType<typeof drizzle<typeof schema>>, orgId: string): Promise<SummaryRow[]> {
@@ -211,11 +218,21 @@ app.get("/admin", async (c) => {
       .from(schema.invitation)
       .where(and(eq(schema.invitation.organizationId, org.id), eq(schema.invitation.status, "pending")))
       .all();
-    cards.push({ org, members, invites });
+    const albiCfg = await getAlbiConfig(d, org.id);
+    cards.push({
+      org,
+      members,
+      invites,
+      albi: albiCfg
+        ? { enabled: albiCfg.enabled, lastSyncAt: albiCfg.lastSyncAt ? albiCfg.lastSyncAt.toISOString() : null }
+        : null
+    });
   }
 
   const q = c.req.query();
-  return c.html(<AdminPage user={pageUser(session, orgs)} cards={cards} error={q.error} invited={q.invited} />);
+  return c.html(
+    <AdminPage user={pageUser(session, orgs)} cards={cards} error={q.error} invited={q.invited} notice={q.notice} />
+  );
 });
 
 app.post("/admin/invite", async (c) => {
@@ -235,6 +252,120 @@ app.post("/admin/invite", async (c) => {
   } catch (e) {
     return c.redirect(`/admin?error=${errMessage(e)}`);
   }
+});
+
+// --- Albi admin ------------------------------------------------------------
+
+app.post("/admin/albi", async (c) => {
+  const session = await getSession(c);
+  if (!session) return c.redirect("/login");
+  const d = drizzle(c.env.DB, { schema });
+  const orgs = await accessibleOrgs(d, session.user.id);
+  const body = await c.req.parseBody();
+  const organizationId = String(body.organizationId ?? "");
+  if (!isOrgAdmin(orgs, organizationId)) return c.redirect(`/admin?error=${encodeURIComponent("Not authorized")}`);
+
+  const now = new Date();
+  await d
+    .insert(schema.albiConfig)
+    .values({
+      organizationId,
+      apiKey: String(body.apiKey ?? ""),
+      authHeader: String(body.authHeader ?? "") || null,
+      enabled: true,
+      updatedAt: now
+    })
+    .onConflictDoUpdate({
+      target: schema.albiConfig.organizationId,
+      set: {
+        apiKey: String(body.apiKey ?? ""),
+        authHeader: String(body.authHeader ?? "") || null,
+        enabled: true,
+        updatedAt: now
+      }
+    });
+  return c.redirect(`/admin?notice=${encodeURIComponent("Albi key saved")}`);
+});
+
+app.post("/admin/albi/sync", async (c) => {
+  const session = await getSession(c);
+  if (!session) return c.redirect("/login");
+  const d = drizzle(c.env.DB, { schema });
+  const orgs = await accessibleOrgs(d, session.user.id);
+  const body = await c.req.parseBody();
+  const organizationId = String(body.organizationId ?? "");
+  if (!isOrgAdmin(orgs, organizationId)) return c.redirect(`/admin?error=${encodeURIComponent("Not authorized")}`);
+  try {
+    const result = await syncAlbiOrg(c.env, organizationId);
+    if (!result.ok) return c.redirect(`/admin?error=${encodeURIComponent(result.error)}`);
+    return c.redirect(
+      `/admin?notice=${encodeURIComponent(`Albi synced: ${result.projects} projects, ${result.kpiRows} KPI rows${result.kpiErrors ? `, ${result.kpiErrors} KPI errors` : ""}`)}`
+    );
+  } catch (e) {
+    return c.redirect(`/admin?error=${errMessage(e)}`);
+  }
+});
+
+app.post("/admin/albi/webhook", async (c) => {
+  const session = await getSession(c);
+  if (!session) return c.redirect("/login");
+  const d = drizzle(c.env.DB, { schema });
+  const orgs = await accessibleOrgs(d, session.user.id);
+  const body = await c.req.parseBody();
+  const organizationId = String(body.organizationId ?? "");
+  if (!isOrgAdmin(orgs, organizationId)) return c.redirect(`/admin?error=${encodeURIComponent("Not authorized")}`);
+
+  const org = orgs.find((o) => o.id === organizationId)!;
+  const cfg = await getAlbiConfig(d, organizationId);
+  if (!cfg) return c.redirect(`/admin?error=${encodeURIComponent("Save an Albi API key first")}`);
+
+  try {
+    const scopes = String(body.scopes ?? "")
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean);
+    const webhookURL = `${c.env.BASE_URL}/api/webhooks/albi/${org.slug}/${c.env.INGEST_TOKEN}`;
+    const client = albiClientFor(cfg);
+    const result = await client.request(ALBI_PATHS.webhookCreate, {
+      body: { webhookURL, scopes: scopes.length ? scopes : ["*"] }
+    });
+    return c.redirect(`/admin?notice=${encodeURIComponent(`Webhook registered: ${JSON.stringify(result).slice(0, 120)}`)}`);
+  } catch (e) {
+    return c.redirect(`/admin?error=${errMessage(e)}`);
+  }
+});
+
+// --- Albi webhook receiver ---------------------------------------------------
+// Registered as: BASE_URL/api/webhooks/albi/{org-slug}/{INGEST_TOKEN}
+app.post("/api/webhooks/albi/:slug/:token", async (c) => {
+  if (!c.env.INGEST_TOKEN || c.req.param("token") !== c.env.INGEST_TOKEN) {
+    return c.json({ error: "unauthorized" }, 401);
+  }
+  const d = drizzle(c.env.DB, { schema });
+  const org = await d
+    .select()
+    .from(schema.organization)
+    .where(eq(schema.organization.slug, c.req.param("slug")))
+    .get();
+  if (!org) return c.json({ error: "unknown org" }, 404);
+
+  const payload = await c.req.json().catch(() => ({}));
+  await d.insert(schema.albiEvents).values({
+    organizationId: org.id,
+    scope: String((payload as any)?.scope ?? (payload as any)?.event ?? (payload as any)?.type ?? ""),
+    payload: JSON.stringify(payload),
+    receivedAt: new Date()
+  });
+
+  // Best-effort: refresh the affected project.
+  const p: any = payload;
+  const projectId = p?.projectId ?? p?.data?.projectId ?? p?.project?.id ?? p?.id;
+  if (projectId) {
+    c.executionCtx.waitUntil(
+      syncAlbiProject(c.env, org.id, String(projectId)).catch((e) => console.error("albi webhook resync:", e.message))
+    );
+  }
+  return c.json({ ok: true });
 });
 
 // --- JSON API (kept for MCP consumers and future clients) -------------------
@@ -363,4 +494,10 @@ app.all("/mcp", handleMcp);
 // --- Static assets fallback (images etc.) ----------------------------------
 app.get("*", (c) => c.env.ASSETS.fetch(c.req.raw));
 
-export default app;
+export default {
+  fetch: app.fetch,
+  // Nightly Albi sync (cron in wrangler.jsonc).
+  scheduled(_event: ScheduledController, env: Env, ctx: ExecutionContext) {
+    ctx.waitUntil(syncAllAlbi(env));
+  }
+};
