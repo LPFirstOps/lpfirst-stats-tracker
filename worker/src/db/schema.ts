@@ -179,3 +179,68 @@ export const metrics = sqliteTable(
     index("metrics_lookup").on(t.organizationId, t.source, t.metric, t.date)
   ]
 );
+
+// ---------------------------------------------------------------------------
+// Albi (Albiware) integration
+// ---------------------------------------------------------------------------
+
+// Per-company Albi tenant credentials. Managed from /admin by org admins.
+export const albiConfig = sqliteTable("albi_config", {
+  organizationId: text("organization_id")
+    .primaryKey()
+    .references(() => organization.id, { onDelete: "cascade" }),
+  apiKey: text("api_key").notNull(),
+  // Header the key is sent in; Albi docs show header credentials — default
+  // x-api-key, overridable if the tenant expects e.g. Authorization.
+  authHeader: text("auth_header"),
+  enabled: integer("enabled", { mode: "boolean" }).notNull().default(true),
+  lastSyncAt: integer("last_sync_at", { mode: "timestamp_ms" }),
+  updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull()
+});
+
+// Synced Albi projects (raw payload + promoted columns for filtering).
+export const albiProjects = sqliteTable(
+  "albi_projects",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    organizationId: text("organization_id").notNull().references(() => organization.id, { onDelete: "cascade" }),
+    albiId: text("albi_id").notNull(),
+    name: text("name"),
+    status: text("status"),
+    address: text("address"),
+    receivedDate: text("received_date"),
+    payload: text("payload").notNull(),
+    syncedAt: integer("synced_at", { mode: "timestamp_ms" }).notNull()
+  },
+  (t) => [
+    uniqueIndex("albi_projects_unique").on(t.organizationId, t.albiId),
+    index("albi_projects_status").on(t.organizationId, t.status)
+  ]
+);
+
+// Tidy financial KPIs per project — joinable with `metrics` (scorecards).
+export const albiProjectKpis = sqliteTable(
+  "albi_project_kpis",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    organizationId: text("organization_id").notNull().references(() => organization.id, { onDelete: "cascade" }),
+    albiProjectId: text("albi_project_id").notNull(),
+    metric: text("metric").notNull(),
+    value: real("value"),
+    textValue: text("text_value"),
+    syncedAt: integer("synced_at", { mode: "timestamp_ms" }).notNull()
+  },
+  (t) => [
+    uniqueIndex("albi_kpis_unique").on(t.organizationId, t.albiProjectId, t.metric),
+    index("albi_kpis_metric").on(t.organizationId, t.metric)
+  ]
+);
+
+// Raw webhook event log (debug/audit + replay).
+export const albiEvents = sqliteTable("albi_events", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  organizationId: text("organization_id").notNull(),
+  scope: text("scope"),
+  payload: text("payload").notNull(),
+  receivedAt: integer("received_at", { mode: "timestamp_ms" }).notNull()
+});

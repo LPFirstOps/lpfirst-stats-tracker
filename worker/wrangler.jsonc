@@ -24,6 +24,10 @@
       "migrations_dir": "migrations"
     }
   ],
+  // Nightly Albi sync (after the 6:00 UTC scrape workflow window).
+  "triggers": {
+    "crons": ["30 7 * * *"]
+  },
   "vars": {
     // Set to the deployed URL (workers.dev or custom domain). Must match what
     // MCP clients and browsers use — OAuth issuer/redirects derive from it.
