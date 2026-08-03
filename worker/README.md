@@ -1,9 +1,20 @@
 # LP First Stats — Cloudflare Worker
 
 Node app on Cloudflare Workers replacing the StatiCrypt static dashboard.
-Hono (routing) + Better Auth (auth, companies, invitations, MCP OAuth) +
-Drizzle ORM + D1 (SQL data model). Scrapers stay in GitHub Actions and push
-snapshots to `POST /api/ingest`.
+Hono with server-rendered JSX pages (Laravel-style MPA: forms POST, server
+redirects, no client-side framework) + Better Auth (auth, companies,
+invitations, MCP OAuth) + Drizzle ORM + D1. Scrapers stay in GitHub Actions
+and push snapshots to `POST /api/ingest`.
+
+## Architecture
+
+- `src/pages/` — JSX components rendered server-side (`c.html(<Page/>)`).
+  Shared `Layout.tsx`. No client JS anywhere except the (pending) chart
+  island on the dashboard.
+- Forms are plain `<form method="post">` → Hono route → 302 redirect.
+  Auth routes proxy to Better Auth's server API and forward Set-Cookie.
+- `/api/*` JSON endpoints remain for MCP tools and future consumers.
+- `public/` — static assets only (images), served via catch-all fallback.
 
 ## Permission model
 
@@ -31,7 +42,7 @@ npm run deploy
 Set `BASE_URL` in `wrangler.jsonc` to the deployed URL (workers.dev or custom
 domain) and redeploy — OAuth issuer/redirect URLs derive from it.
 
-**Bootstrap yourself:** sign up at `/login.html`, then:
+**Bootstrap yourself:** sign up at `/login`, then:
 
 ```bash
 npx wrangler d1 execute lpfirst-stats --remote --command \
@@ -80,11 +91,11 @@ All tools are scoped to the companies the authenticated user belongs to:
 
 ## Dashboard port (TODO)
 
-`public/index.html` is a placeholder. The real dashboard source is
-`index.html.bak` (gitignored — not in the repo). To port: paste its content
-into `public/index.html`, delete the StatiCrypt decrypt block, and load data
-with `fetch("/api/statsdata")`, which returns the legacy `statsData` shape
-scoped to the signed-in user. See the comment in `public/index.html`.
+`src/pages/Dashboard.tsx` is a server-rendered placeholder. The real dashboard
+source is `index.html.bak` (gitignored — not in the repo). Port its markup into
+the component and keep its Chart.js script as the single client-side island,
+fed by embedded `statsData` or `fetch("/api/statsdata")` — instructions are in
+the component's doc comment.
 
 ## Cutover checklist
 

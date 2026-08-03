@@ -43,7 +43,7 @@ export function createAuth(env: Env) {
       organization({
         allowUserToCreateOrganization: async (user) => user.role === "admin",
         async sendInvitationEmail(data) {
-          const url = `${env.BASE_URL}/accept-invitation.html?id=${data.id}&email=${encodeURIComponent(data.email)}`;
+          const url = `${env.BASE_URL}/accept-invitation?id=${data.id}&email=${encodeURIComponent(data.email)}`;
           if (!env.RESEND_API_KEY) {
             console.log(`[invite] ${data.email} -> ${data.organization.name}: ${url}`);
             return;
@@ -68,7 +68,7 @@ export function createAuth(env: Env) {
       // OAuth 2.1 + dynamic client registration for MCP clients. Swap when
       // upgrading better-auth majors.
       mcp({
-        loginPage: "/login.html"
+        loginPage: "/login"
       })
     ]
   });
