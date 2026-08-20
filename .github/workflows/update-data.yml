@@ -66,8 +66,68 @@ jobs:
           MOYERS_ALACRITY_PASSWORD=${{ secrets.MOYERS_ALACRITY_PASSWORD }}
           EOF
 
-      - name: Run update (decrypt, scrape, encrypt)
-        run: npm run update
+      # `npm run update` chains decrypt -> scrape:daily -> encrypt:data, and
+      # encrypt:data deletes the plaintext data/stats.json on its way out. Split
+      # into steps so Pulsecheck can be fed while that file still exists.
+      - name: Decrypt existing data
+        run: npm run decrypt
+
+      - name: Scrape (daily)
+        run: npm run scrape:daily
+
+      # Dual-run: Pulsecheck is fed alongside the encrypted-file pipeline, and a
+      # failure here must not stop the legacy pipeline from completing. The run
+      # is still marked failed by the gate step at the end, so GitHub emails.
+      - name: Send scrape to Pulsecheck
+        id: pulsecheck
+        continue-on-error: true
+        env:
+          PULSECHECK_URL: ${{ secrets.PULSECHECK_URL }}
+          PULSECHECK_TOKEN: ${{ secrets.PULSECHECK_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          RESPONSE=$(curl -sf -X POST "$PULSECHECK_URL/api/ingest" \
+            -H "Authorization: Bearer $PULSECHECK_TOKEN" \
+            -H "Content-Type: application/json" \
+            -H "Accept: application/json" \
+            --data-binary @data/stats.json)
+
+          BATCH=$(echo "$RESPONSE" | jq -r '.id')
+          if [ -z "$BATCH" ] || [ "$BATCH" = "null" ]; then
+            echo "No batch id in ingest response: $RESPONSE"
+            exit 1
+          fi
+          echo "Ingest batch $BATCH accepted; polling for a terminal status."
+
+          # Ingest is asynchronous (202 + poll). Polling to a terminal status is
+          # what makes an ingest failure fail this run.
+          for _ in $(seq 1 60); do
+            STATUS=$(curl -sf -H "Authorization: Bearer $PULSECHECK_TOKEN" \
+              -H "Accept: application/json" \
+              "$PULSECHECK_URL/api/ingest/$BATCH" | jq -r '.status')
+
+            case "$STATUS" in
+              completed)
+                echo "Ingest completed."
+                exit 0
+                ;;
+              failed|completed_with_errors)
+                echo "Ingest finished as '$STATUS'."
+                curl -sf -H "Authorization: Bearer $PULSECHECK_TOKEN" \
+                  -H "Accept: application/json" \
+                  "$PULSECHECK_URL/api/ingest/$BATCH" | jq '.errors'
+                exit 1
+                ;;
+            esac
+            sleep 10
+          done
+
+          echo "Ingest did not reach a terminal status within 10 minutes."
+          exit 1
+
+      - name: Re-encrypt data
+        run: npm run encrypt:data
 
       - name: Commit and push changes
         id: commit
@@ -89,3 +149,11 @@ jobs:
         run: gh workflow run static.yml
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # Runs last so the encrypted-file pipeline above completes either way; this
+      # only surfaces the ingest failure as a failed run (and its email).
+      - name: Fail the run if Pulsecheck ingest failed
+        if: steps.pulsecheck.outcome == 'failure'
+        run: |
+          echo "Scrape and the encrypted-file pipeline succeeded, but the Pulsecheck ingest did not."
+          exit 1
