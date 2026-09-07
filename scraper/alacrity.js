@@ -433,7 +433,8 @@ module.exports = {
   storeAlacritySnapshot,
   loginAlacrity,
   scrapeCIPReport,
-  extractCIPData
+  extractCIPData,
+  flattenCIPData
 };
 
 // Allow standalone execution for testing

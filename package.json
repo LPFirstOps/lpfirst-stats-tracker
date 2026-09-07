@@ -9,6 +9,10 @@
     "decrypt": "node scripts/decrypt.js",
     "encrypt": "node scripts/encrypt.js",
     "encrypt:data": "node scripts/encrypt-data.js",
+    "push:d1": "node scripts/push-to-d1.js",
+    "push:d1:all": "node scripts/push-to-d1.js --all",
+    "push:d1:dry": "node scripts/push-to-d1.js --dry-run --all",
+    "d1:migrate": "wrangler d1 migrations apply lpfirst-stats --remote",
     "scrape:cc": "node scraper/cc.js",
     "scrape:sedgwick": "node scraper/sedgwick.js",
     "scrape:alacrity": "node scraper/alacrity.js",
@@ -21,7 +25,8 @@
     "scrape:moyers": "node scraper/moyers.js",
     "update:moyers": "npm run decrypt && npm run scrape:moyers && npm run encrypt:data",
     "update:initial": "npm run scrape:initial && npm run encrypt",
-    "serve": "npx serve ."
+    "serve": "npx serve .",
+    "test": "node --test test/*.test.js"
   },
   "keywords": [],
   "author": "Kevin Colten",
@@ -34,6 +39,7 @@
     "playwright": "^1.60.0"
   },
   "devDependencies": {
-    "staticrypt": "^3.5.4"
+    "staticrypt": "^3.5.4",
+    "wrangler": "^4.129.0"
   }
 }

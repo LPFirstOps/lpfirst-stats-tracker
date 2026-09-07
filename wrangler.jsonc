@@ -1,0 +1,14 @@
+// Used only for `wrangler d1` commands (create / migrations). There is no Worker.
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "lpfirst-stats-tracker",
+  "compatibility_date": "2026-09-01",
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "lpfirst-stats",
+      "database_id": "63e2044c-f532-4b34-afa6-b972a262b470",
+      "migrations_dir": "migrations"
+    }
+  ]
+}

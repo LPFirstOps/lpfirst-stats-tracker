@@ -75,6 +75,18 @@ jobs:
       - name: Scrape (daily)
         run: npm run scrape:daily
 
+      # Mirror flattened snapshots into Cloudflare D1. Like Pulsecheck below, a
+      # failure here must not stop the encrypted-file pipeline; the gate step at
+      # the end turns it into a failed run so GitHub emails.
+      - name: Push metrics to D1
+        id: d1
+        continue-on-error: true
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_D1_DATABASE_ID: ${{ secrets.CLOUDFLARE_D1_DATABASE_ID }}
+        run: npm run push:d1
+
       # Dual-run: Pulsecheck is fed alongside the encrypted-file pipeline, and a
       # failure here must not stop the legacy pipeline from completing. The run
       # is still marked failed by the gate step at the end, so GitHub emails.
@@ -151,9 +163,12 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       # Runs last so the encrypted-file pipeline above completes either way; this
-      # only surfaces the ingest failure as a failed run (and its email).
-      - name: Fail the run if Pulsecheck ingest failed
-        if: steps.pulsecheck.outcome == 'failure'
+      # only surfaces a downstream sync failure as a failed run (and its email).
+      # One combined step: a second gate after a failing one would be skipped.
+      - name: Fail the run if a downstream sync failed
+        if: steps.pulsecheck.outcome == 'failure' || steps.d1.outcome == 'failure'
         run: |
-          echo "Scrape and the encrypted-file pipeline succeeded, but the Pulsecheck ingest did not."
+          echo "Scrape and the encrypted-file pipeline succeeded, but a downstream sync did not:"
+          echo "  Pulsecheck: ${{ steps.pulsecheck.outcome }}"
+          echo "  D1:         ${{ steps.d1.outcome }}"
           exit 1
