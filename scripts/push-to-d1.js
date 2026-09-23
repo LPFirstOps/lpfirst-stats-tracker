@@ -22,15 +22,15 @@ const { formatDate } = require('../scraper/utils');
 const ROOT = path.resolve(__dirname, '..');
 const DATA_PATH = path.join(ROOT, 'data', 'stats.json');
 
-// D1 allows 100 bound parameters per statement; each row binds 7.
-const PARAMS_PER_ROW = 7;
-const ROWS_PER_STATEMENT = 14;
+// D1 allows 100 bound parameters per statement; each row binds 8.
+const PARAMS_PER_ROW = 8;
+const ROWS_PER_STATEMENT = 12;
 const STATEMENTS_PER_REQUEST = 50;
 const MAX_ATTEMPTS = 5;
 
 const UPSERT_TAIL = `
 ON CONFLICT(company, source, entity, date, metric_key)
-DO UPDATE SET value = excluded.value, year = excluded.year, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ','now')`;
+DO UPDATE SET value = excluded.value, year = excluded.year, meta = excluded.meta, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ','now')`;
 
 function chunk(items, size) {
   const out = [];
@@ -45,10 +45,13 @@ function chunk(items, size) {
  */
 function buildStatements(rows) {
   return chunk(rows, ROWS_PER_STATEMENT).map(group => ({
-    sql: 'INSERT INTO metrics (company, source, entity, date, metric_key, value, year)\nVALUES '
+    sql: 'INSERT INTO metrics (company, source, entity, date, metric_key, value, year, meta)\nVALUES '
       + group.map(() => '(' + Array(PARAMS_PER_ROW).fill('?').join(',') + ')').join(',')
       + UPSERT_TAIL,
-    params: group.flatMap(r => [r.company, r.source, r.entity, r.date, r.metric_key, r.value, r.year ?? null])
+    params: group.flatMap(r => [
+      r.company, r.source, r.entity, r.date, r.metric_key, r.value, r.year ?? null,
+      r.meta ? JSON.stringify(r.meta) : null
+    ])
   }));
 }
 

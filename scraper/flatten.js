@@ -2,7 +2,8 @@
  * Pure helpers that turn the nested stats.json structure into flat metric rows
  * for the Cloudflare D1 `metrics` table. No I/O, no env access.
  *
- * Row = { company, source, entity, date, metric_key, value, year }
+ * Row = { company, source, entity, date, metric_key, value, year, meta }
+ *   meta is null except for Alacrity `*_actual` rows, which carry { operator }.
  *
  * metric_key conventions match the diff keys the scrapers already produce:
  *   cc:       `${tab}.${assignmentType}.${metric}`, `${tab}.${metric}`, `summary.${key}`
@@ -55,18 +56,39 @@ function flattenSedgwickSnapshot(snapshot) {
   return flat;
 }
 
-function flattenAlacritySnapshot(snapshot) {
+/**
+ * Alacrity: flattenCIPData keys, plus the comparison operator of each SLA /
+ * survey / operational metric attached as meta on its `_actual` row.
+ * @returns {{ flat: Object, meta: Object }} meta is keyed by metric_key
+ */
+function flattenAlacritySnapshotWithMeta(snapshot) {
+  const dashboard = snapshot.dashboard || {};
   const flat = {};
-  for (const [key, value] of Object.entries(flattenCIPData(snapshot.dashboard || {}))) {
+  for (const [key, value] of Object.entries(flattenCIPData(dashboard))) {
     if (isNumber(value)) flat[key] = value;
   }
-  return flat;
+
+  const meta = {};
+  for (const section of ['emergency', 'nonEmergency']) {
+    for (const category of ['slas', 'survey', 'operational']) {
+      for (const [key, entry] of Object.entries(dashboard[section]?.[category] || {})) {
+        const metricKey = `${section}_${category}_${key}_actual`;
+        if (metricKey in flat && typeof entry?.operator === 'string') meta[metricKey] = { operator: entry.operator };
+      }
+    }
+  }
+  return { flat, meta };
 }
 
+function flattenAlacritySnapshot(snapshot) {
+  return flattenAlacritySnapshotWithMeta(snapshot).flat;
+}
+
+// Each returns { flat, meta } so flattenStats can attach per-row meta uniformly.
 const FLATTENERS = {
-  cc: flattenCCSnapshot,
-  sedgwick: flattenSedgwickSnapshot,
-  alacrity: flattenAlacritySnapshot
+  cc: snapshot => ({ flat: flattenCCSnapshot(snapshot), meta: {} }),
+  sedgwick: snapshot => ({ flat: flattenSedgwickSnapshot(snapshot), meta: {} }),
+  alacrity: flattenAlacritySnapshotWithMeta
 };
 
 /**
@@ -129,8 +151,8 @@ function listYearTotals(stats, currentYear) {
   return totals;
 }
 
-function rowsFromFlat(flat, base) {
-  return Object.entries(flat).map(([metric_key, value]) => ({ ...base, metric_key, value }));
+function rowsFromFlat(flat, base, meta = {}) {
+  return Object.entries(flat).map(([metric_key, value]) => ({ ...base, metric_key, value, meta: meta[metric_key] || null }));
 }
 
 /**
@@ -155,7 +177,8 @@ function flattenStats(stats, options = {}) {
         company: stream.company, source: stream.source, entity: stream.entity,
         date: snapshot.date, year: stream.kind === 'cc' ? (snapshot.year ?? null) : null
       };
-      rows.push(...rowsFromFlat(flatten(snapshot), base));
+      const { flat, meta } = flatten(snapshot);
+      rows.push(...rowsFromFlat(flat, base, meta));
     }
   }
 
@@ -175,5 +198,6 @@ module.exports = {
   flattenCCSnapshot,
   flattenSedgwickSnapshot,
   flattenAlacritySnapshot,
+  flattenAlacritySnapshotWithMeta,
   flattenStats
 };

@@ -14,16 +14,15 @@ const row = (i, date = '2026-09-05') => ({
   company: 'aaction', source: 'cc', entity: '', date, metric_key: `k${i}`, value: i, year: 2026
 });
 
-test('buildStatements packs 14 rows per upsert statement with 7 params each', () => {
-  assert.equal(ROWS_PER_STATEMENT, 14);
+test('buildStatements packs rows into multi-row upsert statements under the 100-param limit', () => {
   const rows = Array.from({ length: 30 }, (_, i) => row(i));
   const stmts = buildStatements(rows);
   assert.equal(stmts.length, 3);
-  assert.equal(stmts[0].params.length, 14 * 7);
-  assert.equal(stmts[2].params.length, 2 * 7);
-  assert.match(stmts[0].sql, /^INSERT INTO metrics \(company, source, entity, date, metric_key, value, year\)\nVALUES \(\?,\?,\?,\?,\?,\?,\?\)(,\(\?,\?,\?,\?,\?,\?,\?\)){13}\n/);
-  assert.match(stmts[0].sql, /ON CONFLICT\(company, source, entity, date, metric_key\)\s+DO UPDATE SET value = excluded\.value, year = excluded\.year, updated_at = strftime/);
-  assert.deepEqual(stmts[0].params.slice(0, 7), ['aaction', 'cc', '', '2026-09-05', 'k0', 0, 2026]);
+  assert.equal(stmts[0].params.length, 12 * 8);
+  assert.equal(stmts[2].params.length, 6 * 8);
+  assert.match(stmts[0].sql, /^INSERT INTO metrics \(company, source, entity, date, metric_key, value, year, meta\)\nVALUES \(\?,\?,\?,\?,\?,\?,\?,\?\)(,\(\?,\?,\?,\?,\?,\?,\?,\?\)){11}\n/);
+  assert.match(stmts[0].sql, /ON CONFLICT\(company, source, entity, date, metric_key\)\s+DO UPDATE SET value = excluded\.value, year = excluded\.year, meta = excluded\.meta, updated_at = strftime/);
+  assert.deepEqual(stmts[0].params.slice(0, 8), ['aaction', 'cc', '', '2026-09-05', 'k0', 0, 2026, null]);
 });
 
 test('buildStatements sends null year as null', () => {
@@ -112,4 +111,16 @@ test('pushStatements reports the failing statement index when a statement in the
     pushStatements([{ sql: 'A', params: [] }, { sql: 'B', params: [] }], cfg, { fetch, sleep: async () => {} }),
     /statement 1 .*no such table: metrics/
   );
+});
+
+test('buildStatements binds 8 params per row including meta JSON, 12 rows per statement', () => {
+  assert.equal(ROWS_PER_STATEMENT, 12);
+  const rows = Array.from({ length: 13 }, (_, i) => ({ ...row(i), meta: i === 0 ? { operator: '>=' } : null }));
+  const stmts = buildStatements(rows);
+  assert.equal(stmts.length, 2);
+  assert.equal(stmts[0].params.length, 12 * 8);
+  assert.deepEqual(stmts[0].params.slice(0, 8), ['aaction', 'cc', '', '2026-09-05', 'k0', 0, 2026, '{"operator":">="}']);
+  assert.equal(stmts[0].params[15], null);
+  assert.match(stmts[0].sql, /INSERT INTO metrics \(company, source, entity, date, metric_key, value, year, meta\)/);
+  assert.match(stmts[0].sql, /meta = excluded\.meta/);
 });

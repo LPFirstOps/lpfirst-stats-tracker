@@ -118,11 +118,11 @@ test('flattenStats produces rows with year for CC, null year otherwise, and Dec 
   };
   const rows = flattenStats(stats, { currentYear: 2026 });
   const cc = rows.find(r => r.metric_key === 'assignments.Residential POMS.jobsSold');
-  assert.deepEqual(cc, { company: 'aaction', source: 'cc', entity: '', date: '2026-09-05', metric_key: 'assignments.Residential POMS.jobsSold', value: 3, year: 2026 });
+  assert.deepEqual(cc, { company: 'aaction', source: 'cc', entity: '', date: '2026-09-05', metric_key: 'assignments.Residential POMS.jobsSold', value: 3, year: 2026, meta: null });
   const sed = rows.find(r => r.metric_key === 'openJobsTotal');
-  assert.deepEqual(sed, { company: 'aaction', source: 'sedgwick', entity: '', date: '2026-09-05', metric_key: 'openJobsTotal', value: 72, year: null });
+  assert.deepEqual(sed, { company: 'aaction', source: 'sedgwick', entity: '', date: '2026-09-05', metric_key: 'openJobsTotal', value: 72, year: null, meta: null });
   const past = rows.find(r => r.date === '2024-12-31');
-  assert.deepEqual(past, { company: 'aaction', source: 'cc', entity: '', date: '2024-12-31', metric_key: 'assignments.Commercial POMS.jobsSold', value: 7, year: 2024 });
+  assert.deepEqual(past, { company: 'aaction', source: 'cc', entity: '', date: '2024-12-31', metric_key: 'assignments.Commercial POMS.jobsSold', value: 7, year: 2024, meta: null });
 });
 
 test('flattenStats snapshot filter selects which snapshots are flattened', () => {
@@ -131,4 +131,21 @@ test('flattenStats snapshot filter selects which snapshots are flattened', () =>
   const latestOnly = flattenStats(stats, { selectSnapshots: snaps => snaps.slice(-1) });
   assert.ok(latestOnly.every(r => r.date === '2026-09-05'));
   assert.equal(latestOnly.length, 4);
+});
+
+test('flattenAlacritySnapshot attaches the SLA operator as meta on actual rows', () => {
+  const { flattenAlacritySnapshotWithMeta } = require('../scraper/flatten');
+  const { flat, meta } = flattenAlacritySnapshotWithMeta(alacritySnapshot);
+  assert.equal(flat.emergency_slas_contactInsured_actual, 97.2);
+  assert.deepEqual(meta, { emergency_slas_contactInsured_actual: { operator: '>' } });
+});
+
+test('flattenStats rows carry meta for Alacrity actual rows and null elsewhere', () => {
+  const stats = { alacrity: { dailySnapshots: [alacritySnapshot] }, sedgwick: { dailySnapshots: [sedgwickSnapshot] } };
+  const rows = flattenStats(stats, { currentYear: 2026 });
+  const actual = rows.find(r => r.metric_key === 'emergency_slas_contactInsured_actual');
+  assert.deepEqual(actual.meta, { operator: '>' });
+  const target = rows.find(r => r.metric_key === 'emergency_slas_contactInsured_target');
+  assert.equal(target.meta, null);
+  assert.equal(rows.find(r => r.metric_key === 'openJobsTotal').meta, null);
 });
